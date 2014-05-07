@@ -5,6 +5,7 @@ import akka.routing._
 import akka.pattern.{ask, pipe}
 import akka.util.Timeout
 import org.deepdive.settings._
+import org.deepdive.datastore._
 import org.deepdive.Context
 import org.deepdive.extraction._
 import org.deepdive.extraction.ExtractorRunner._
@@ -21,6 +22,7 @@ import scala.util.Random
 import java.io.{File, PrintWriter}
 // import java.nio.file.Files
 import scala.io.Source
+import scalikejdbc._
 
 /* Companion object to the ExtractorRunner */
 object ExtractorRunner {
@@ -108,10 +110,47 @@ class ExtractorRunner(dataStore: JsonExtractionDataStore) extends Actor
           val udfCmd = task.extractor.udf
           val funcName = s"func_${task.extractor.name}"
           
+          // get the user's input query
           val inputQuery = task.extractor.inputQuery match {
             case DatastoreInputQuery(query) => query
             case _ => 
           }
+
+          // check if the user is using Greenplum
+          val isUsingGreenplum = PostgresDataStore.DB.readOnly { implicit session =>
+            SQL("SELECT version();").map { rs =>
+              rs.string("version")
+            }.single()().get
+          }.contains("Greenplum")
+
+
+
+          // TODO: msushkov
+          // // if the user is using Greenplum, create an external table
+          // if (isUsingGreenplum) {
+          //   // TODO start the gpfdist sever on port 8081
+          //   // gpfdist -d $GPUNLOAD_DIR -p 8081 &
+
+          //   // TODO get the column names and their types
+            
+
+
+          //   val createExternalTableQuery = s"""
+          //     DROP EXTERNAL TABLE IF EXISTS \"$EXTERNAL_TABLE_NAME\" CASCADE;
+          //     CREATE WRITABLE EXTERNAL TABLE \"$EXTERNAL_TABLE_NAME\" ($EXTERNAL_TABLE_COLUMNS)
+          //     LOCATION ('gpfdist://$HOSTNAME:8081/$QUERY_OUTPUT_FILE')
+          //     FORMAT 'TEXT';
+          //     INSERT INTO \"$EXTERNAL_TABLE_NAME\" ($SQL_QUERY);"""
+
+          //   executeSqlQueryOrFail(createExternalTableQuery, taskSender)
+
+          //   // psql -p $PGPORT -h $PGHOST $DBNAME -c """$createExternalTableQuery"""
+          // } else {
+
+          // }
+
+
+
           val queryOutputFile = File.createTempFile(s"copy_query_${funcName}", ".tsv")
           // executeSqlQueryOrFail
 
@@ -151,13 +190,41 @@ class ExtractorRunner(dataStore: JsonExtractionDataStore) extends Actor
           val pgport = System.getenv("PGPORT")
           val pghost = System.getenv("PGHOST")
 
-          val checkGreenplumSQL = s"""
-              SELECT version() LIKE '%Greenplum%';
-            """
-
 
           // Only allow single-threaded copy
+
           val writebackCmd = s"find ${splitPrefix}*.out -print0 | xargs -0 -P 1 -L 1 bash -c 'psql -d ${dbname} -U ${pguser} -p ${pgport} -h ${pghost} -c " + "\"COPY " + s"${outputRel} FROM STDIN;" + " \" < \"$0\"'"
+
+
+          // // if using Greenplum
+          // val gpUnloadDir = s"${queryOutputFile.getAbsolutePath()}${splitPrefix}*"
+          // val gploadFileContents = s"""---
+          //   VERSION: 1.0.0.1
+          //   DATABASE: ${dbname}
+          //   USER: ${pguser}
+          //   HOST: ${pghost}
+          //   PORT: ${pgport}
+          //   GPLOAD:
+          //    INPUT:
+          //     - SOURCE:
+          //          FILE:
+          //            - ${gpUnloadDir}
+          //     - FORMAT: text
+          //     - DELIMITER: E'\t'
+          //    OUTPUT:
+          //     - TABLE: ${task.extractor.outputRelation}"""
+          
+          // // execute the 1-line bash script consisting of "gpload"
+          // val gpLoadYmlTmpFile = File.createTempFile(s"exec_parallel_gpload_yml", ".sh")
+          // val writer = new PrintWriter(gpLoadYmlTmpFile)
+          // writer.println(s"${gploadFileContents}")
+          // writer.close()
+          // log.debug(s"Temporary gpload YML config file saved to ${gpLoadYmlTmpFile.getAbsolutePath()}")
+          
+
+          // executeScriptOrFail(gpLoadYmlTmpFile.getAbsolutePath(), taskSender)
+
+          // val writebackCmd = s"gpload -f ${}"
 
 
 
