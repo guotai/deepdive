@@ -289,12 +289,6 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
   def init() : Unit = {
   }
 
-  def generateWeightCmd(weightPrefix: String, weightVariables: Seq[String]) : String = 
-    weightVariables.map ( v => s"""(CASE WHEN "${v}" IS NULL THEN '' ELSE "${v}"::text END)""" )
-      .mkString(" || ") match {
-      case "" => s"""'${weightPrefix}-' """
-      case x => s"""'${weightPrefix}-' || ${x}"""
-  }
 
   def dumpFactorGraph(serializer: Serializer, schema: Map[String, _ <: VariableDataType],
     factorDescs: Seq[FactorDesc], holdoutFraction: Double, holdoutQuery: Option[String],
@@ -307,6 +301,7 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
 
     val randomGen = new Random()
     val weightMap = scala.collection.mutable.Map[String, Long]()
+    val variableTypeMap = scala.collection.mutable.Map[String, String]()
 
     val customHoldout = holdoutQuery match {
       case Some(query) => true
@@ -327,6 +322,11 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       val cardinality = dataType match {
         case BooleanType => 0
         case MultinomialType(x) => x.toLong
+      }
+
+      dataType match {
+        case BooleanType => variableTypeMap(s"${relation}.${column}") = "Boolean"
+        case MultinomialType(x) => variableTypeMap(s"${relation}.${column}") = "Multinomial"
       }
 
       issueQuery(selectVariablesForDumpSQL) { rs =>
@@ -374,10 +374,31 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
 
       val variables = factorDesc.func.variables
 
+      // create cardinality description
+      def getCardinalityStr(equalPredicate: Option[Long], variable: String) : String = {
+        val predicateValue : Long = equalPredicate match {
+          case Some(s) => s
+          case None => -1
+        }
+        val groundValue : Long = variableTypeMap(variable) match {
+          case "Boolean" => 1
+          case "Multinomial" => 0
+        }
+        
+        if (predicateValue > 0)
+          predicateValue.toString
+        else
+          groundValue.toString
+      }
+
+      val cardinalityStr = variables.map(v => getCardinalityStr(v.predicate, s"${v.key}")).mkString(",")
+
       issueQuery(selectInputQueryForDumpSQL) { rs =>
 
-        val weightCmd = factorDesc.weightPrefix + "-" + factorDesc.weight.variables.map(
-        v => rs.getString(v)).mkString("")
+        val weightCmd = factorDesc.weightPrefix + "-" + factorDesc.weight.variables.map(v => 
+          rs.getString(v)).mkString("") + "-" + cardinalityStr
+
+        // log.info(weightCmd)
 
         serializer.addFactor(numFactors, weightMap(weightCmd), functionName, variables.length)
 
@@ -473,6 +494,17 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
           UPDATE ${relation} SET id = nextval('${IdSequence}');
           """)
       }
+
+      // Create a cardinality table for the variable
+      val cardinalityValues = dataType match {
+        case BooleanType => "(1)"
+        case MultinomialType(x) => (0 to x-1).map (x => s"(${x})").mkString(", ")
+      }
+      val cardinalityTableName = s"${relation}_${column}_cardinality"
+      writer.println(s"""
+        DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
+        CREATE TABLE ${cardinalityTableName}(cardinality) AS VALUES ${cardinalityValues} WITH DATA;
+        """)
        
     }
 
@@ -482,7 +514,7 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       case None =>
     }
 
-    // Create table for each inference rule
+    // Create view for each inference rule
     factorDescs.foreach { factorDesc =>
       
       // input query
@@ -491,6 +523,30 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
         CREATE VIEW ${factorDesc.name}_query_user AS ${factorDesc.inputQuery};
         """)
 
+      // create cardinality table for each predicate
+      factorDesc.func.variables.zipWithIndex.foreach { case(v,idx) => {
+        val cardinalityTableName = s"${factorDesc.weightPrefix}_cardinality_${idx}"
+        v.predicate match {
+          case Some(s) => 
+            writer.println(s"""
+              DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
+              CREATE TABLE ${cardinalityTableName}(cardinality) AS VALUES (${s}) WITH DATA;
+              """)
+          case None =>
+            writer.println(s"""
+              DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
+              SELECT * INTO ${cardinalityTableName} FROM ${v.headRelation}_${v.field}_cardinality;
+              """)
+          }
+        }
+      }
+
+      def generateWeightCmd(weightPrefix: String, weightVariables: Seq[String], cardinalityValues: Seq[String]) : String = 
+      weightVariables.map ( v => s"""(CASE WHEN "${v}" IS NULL THEN '' ELSE "${v}"::text END)""" )
+        .mkString(" || ") match {
+        case "" => s"""'${weightPrefix}-' || '-' || ${cardinalityValues.mkString(" || ',' || ")} """
+        case x => s"""'${weightPrefix}-' || ${x} || '-' || ${cardinalityValues.mkString(" || ',' || ")}"""
+      }
 
       // Ground weights for each inference rule
       val weightValue = factorDesc.weight match { 
@@ -499,12 +555,21 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       }
 
       val isFixed = factorDesc.weight.isInstanceOf[KnownFactorWeight]
-      val weightCmd = generateWeightCmd(factorDesc.weightPrefix, factorDesc.weight.variables)
+      val cardinalityValues = factorDesc.func.variables.zipWithIndex.map { case(v,idx) => 
+        s"""${factorDesc.weightPrefix}_cardinality_${idx}.cardinality"""
+      }
+      val cardinalityTables = factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
+        s"${factorDesc.weightPrefix}_cardinality_${idx}"
+      }
+      val weightCmd = generateWeightCmd(factorDesc.weightPrefix, factorDesc.weight.variables, 
+        cardinalityValues)
 
       writer.println(s"""
         INSERT INTO ${WeightsTable}(initial_value, is_fixed, description)
         SELECT ${weightValue} AS wValue, ${isFixed} AS wIsFixed, ${weightCmd} AS wCmd
-        FROM ${factorDesc.name}_query_user GROUP BY wValue, wIsFixed, wCmd;""")
+        FROM ${factorDesc.name}_query_user, ${cardinalityTables.mkString(", ")}
+        GROUP BY wValue, wIsFixed, wCmd;
+        """)
     }
 
     // skip learning: choose a table to copy weights from
