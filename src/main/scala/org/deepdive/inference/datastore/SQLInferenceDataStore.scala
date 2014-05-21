@@ -134,7 +134,7 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
 
   def selectWeightsForDumpSQL = s"""
     SELECT id AS "id", is_fixed AS "is_fixed", initial_value AS "initial_value", description AS "description"
-    FROM ${WeightsTable};
+    FROM ${WeightsTable} ORDER BY description;
   """
 
   def createInferenceResultIndiciesSQL = s"""
@@ -315,7 +315,7 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       val Array(relation, column) = variable.split('.')
       
       val selectVariablesForDumpSQL = s"""
-        SELECT ${relation}.id, (${variable} IS NOT NULL), ${variable}::int, (${VariablesHoldoutTable}.variable_id IS NOT NULL)
+        SELECT ${relation}.id, (${variable} IS NOT NULL), ${variable}::real, (${VariablesHoldoutTable}.variable_id IS NOT NULL)
         FROM ${relation} LEFT JOIN ${VariablesHoldoutTable}
         ON ${relation}.id = ${VariablesHoldoutTable}.variable_id"""
 
@@ -343,7 +343,7 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
         serializer.addVariable(
           rs.getLong(1),            // id
           isEvidence,               // is evidence
-          rs.getLong(3),            // initial value
+          rs.getDouble(3),            // initial value
           dataType.toString,        // data type            
           -1,                       // edge count
           cardinality)              // cardinality
@@ -404,7 +404,7 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
 
         variables.zipWithIndex.foreach { case(v, pos) =>
           serializer.addEdge(rs.getLong(s"${v.relation}.id"),
-            numFactors, pos, !v.isNegated, v.predicate.getOrElse(1))
+            numFactors, pos, !v.isNegated, v.predicate.getOrElse(-1))
           numEdges += 1
         }
 
@@ -523,23 +523,23 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
         CREATE VIEW ${factorDesc.name}_query_user AS ${factorDesc.inputQuery};
         """)
 
-      // create cardinality table for each predicate
-      factorDesc.func.variables.zipWithIndex.foreach { case(v,idx) => {
-        val cardinalityTableName = s"${factorDesc.weightPrefix}_cardinality_${idx}"
-        v.predicate match {
-          case Some(s) => 
-            writer.println(s"""
-              DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
-              CREATE TABLE ${cardinalityTableName}(cardinality) AS VALUES (${s}) WITH DATA;
-              """)
-          case None =>
-            writer.println(s"""
-              DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
-              SELECT * INTO ${cardinalityTableName} FROM ${v.headRelation}_${v.field}_cardinality;
-              """)
-          }
-        }
-      }
+      // // create cardinality table for each predicate
+      // factorDesc.func.variables.zipWithIndex.foreach { case(v,idx) => {
+      //   val cardinalityTableName = s"${factorDesc.weightPrefix}_cardinality_${idx}"
+      //   v.predicate match {
+      //     case Some(s) => 
+      //       writer.println(s"""
+      //         DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
+      //         CREATE TABLE ${cardinalityTableName}(cardinality) AS VALUES (${s}) WITH DATA;
+      //         """)
+      //     case None =>
+      //       writer.println(s"""
+      //         DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
+      //         SELECT * INTO ${cardinalityTableName} FROM ${v.headRelation}_${v.field}_cardinality;
+      //         """)
+      //     }
+      //   }
+      // }
 
       def generateWeightCmd(weightPrefix: String, weightVariables: Seq[String], cardinalityValues: Seq[String]) : String = 
       weightVariables.map ( v => s"""(CASE WHEN "${v}" IS NULL THEN '' ELSE "${v}"::text END)""" )
@@ -555,11 +555,17 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       }
 
       val isFixed = factorDesc.weight.isInstanceOf[KnownFactorWeight]
-      val cardinalityValues = factorDesc.func.variables.zipWithIndex.map { case(v,idx) => 
-        s"""${factorDesc.weightPrefix}_cardinality_${idx}.cardinality"""
-      }
+      // val cardinalityValues = factorDesc.func.variables.zipWithIndex.map { case(v,idx) => 
+      //   s"""${factorDesc.weightPrefix}_cardinality_${idx}.cardinality"""
+      // }
+      // val cardinalityTables = factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
+      //   s"${factorDesc.weightPrefix}_cardinality_${idx}"
+      // }
       val cardinalityTables = factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
-        s"${factorDesc.weightPrefix}_cardinality_${idx}"
+        s"${v.headRelation}_${v.field}_cardinality"
+      }
+      val cardinalityValues = factorDesc.func.variables.zipWithIndex.map { case(v,idx) => 
+        s"""${v.headRelation}_${v.field}_cardinality.cardinality"""
       }
       val weightCmd = generateWeightCmd(factorDesc.weightPrefix, factorDesc.weight.variables, 
         cardinalityValues)

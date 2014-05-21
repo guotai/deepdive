@@ -44,6 +44,7 @@ class BinarySerializer(weightsOutput: OutputStream, variablesOutput: OutputStrea
       case "AndFactorFunction" => 2
       case "EqualFactorFunction" => 3
       case "IsTrueFactorFunction" =>  4
+      case "MultinomialFactorFunction" => 5
     }
     factorStream.writeLong(factorId)
     factorStream.writeLong(weightId)

@@ -13,12 +13,14 @@ CREATE TABLE m2(
 
 INSERT INTO m1(mid, value) VALUES
     (0, 0),
-    (1, 1),
-    (2, 2),
-    (3, NULL);
+    (1, 0),
+    (2, 0),
+    (3, NULL),
+    (4, NULL);
 
 INSERT INTO m2(mid, value) VALUES
-    (0, 1),
+    (0, 0),
     (1, 0),
-    (2, NULL),
-    (3, NULL);
+    (2, 1),
+    (3, NULL),
+    (4, NULL);
