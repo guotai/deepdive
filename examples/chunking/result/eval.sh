@@ -2,6 +2,7 @@
 
 export DBNAME=chunking
 
+psql -c "drop table if exists result cascade;" $DBNAME
 psql -c "create table result(word_id bigint, word text, pos text, true_tag text, tag text);" $DBNAME
 
 psql -c """insert into result 
