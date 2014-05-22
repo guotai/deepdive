@@ -34,7 +34,7 @@ object FactorFunctionParser extends RegexParsers with Logging {
     IsTrueFactorFunction(List(variable))
   }
 
-  def multinomialFactorFunction = ("M") ~> "(" ~> rep1sep(factorVariable, ",") <~ ")" ^^ { varList =>
+  def multinomialFactorFunction = ("Multinomial" | "MULTINOMIAL") ~> "(" ~> rep1sep(factorVariable, ",") <~ ")" ^^ { varList =>
     MultinomialFactorFunction(varList)
   }
 
