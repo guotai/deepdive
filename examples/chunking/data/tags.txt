@@ -1,0 +1,12 @@
+np
+vp
+pp
+adjp
+advp
+sbar
+prt
+conjp
+intj
+lst
+o
+b
