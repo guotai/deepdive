@@ -10,7 +10,7 @@ export PGPASSWORD=${PGPASSWORD:-}
 export PGPORT=${PGPORT:-5432}
 export PGHOST=${PGHOST:-localhost}
 
-# $APP_HOME/prepare_data.sh
+$APP_HOME/prepare_data.sh
 
 cd $DEEPDIVE_HOME
 SBT_OPTS="-Xmx64g" sbt "run -c $APP_HOME/application.conf"
