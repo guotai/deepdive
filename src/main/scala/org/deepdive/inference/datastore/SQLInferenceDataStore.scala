@@ -386,9 +386,9 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
         }
         
         if (predicateValue > 0)
-          predicateValue.toString
+          "%02d".format(predicateValue)
         else
-          groundValue.toString
+          "%02d".format(groundValue)
       }
 
       val cardinalityStr = variables.map(v => getCardinalityStr(v.predicate, s"${v.key}")).mkString(",")
@@ -496,14 +496,16 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       }
 
       // Create a cardinality table for the variable
+      // note we use two-digit fixed-length representation here (may be fixed)
       val cardinalityValues = dataType match {
-        case BooleanType => "(1)"
-        case MultinomialType(x) => (0 to x-1).map (x => s"(${x})").mkString(", ")
+        case BooleanType => "('01')"
+        case MultinomialType(x) => (0 to x-1).map (n => s"""('${"%02d".format(n)}')""").mkString(", ")
       }
       val cardinalityTableName = s"${relation}_${column}_cardinality"
       writer.println(s"""
         DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
-        CREATE TABLE ${cardinalityTableName}(cardinality) AS VALUES ${cardinalityValues} WITH DATA;
+        CREATE TABLE ${cardinalityTableName}(cardinality text);
+        INSERT INTO ${cardinalityTableName} VALUES ${cardinalityValues};
         """)
        
     }
@@ -562,10 +564,10 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       //   s"${factorDesc.weightPrefix}_cardinality_${idx}"
       // }
       val cardinalityTables = factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
-        s"${v.headRelation}_${v.field}_cardinality"
+        s"${v.headRelation}_${v.field}_cardinality AS c${idx}"
       }
       val cardinalityValues = factorDesc.func.variables.zipWithIndex.map { case(v,idx) => 
-        s"""${v.headRelation}_${v.field}_cardinality.cardinality"""
+        s"""c${idx}.cardinality"""
       }
       val weightCmd = generateWeightCmd(factorDesc.weightPrefix, factorDesc.weight.variables, 
         cardinalityValues)
