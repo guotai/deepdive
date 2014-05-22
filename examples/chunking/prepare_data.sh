@@ -15,6 +15,7 @@ psql -c """create table words_raw(
 	id bigint);""" $DBNAME
 
 psql -c """create table words(
+	sent_id bigint,
 	word_id bigint,
 	word text,
 	pos text,

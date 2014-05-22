@@ -9,6 +9,7 @@ import tags
 import sys
 
 tagNames = ['NP', 'VP', 'PP', 'ADJP', 'ADVP', 'SBAR', 'O', 'PRT', 'CONJP', 'INTJ', 'LST', 'B', '']
+sentID = 1
 
 # for each word
 for row in fileinput.input():
@@ -25,6 +26,7 @@ for row in fileinput.input():
 			tag = ''
 
 		print json.dumps({
+			'sent_id' : sentID,
 			'word_id'	: obj['word_id'],
 			'word'		: obj['word'],
 			'pos'			: obj['pos'],
@@ -33,7 +35,9 @@ for row in fileinput.input():
 		})
 
 	else:
+		sentID += 1
 		print json.dumps({
+			'sent_id' : None,
 			'word_id'	: obj['word_id'],
 			'word'		: None,
 			'pos'			: None,
