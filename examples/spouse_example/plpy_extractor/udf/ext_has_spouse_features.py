@@ -13,14 +13,14 @@ def init():
   ddext.input('words', 'text[]')
   ddext.input('ner_tags', 'text[]')
   ddext.input('lemma', 'text[]')
-  ddext.input('relation_id', 'bigint') # Orders of input MATTERS now
+  ddext.input('relation_id', 'text') # Orders of input MATTERS now
   ddext.input('p1_start', 'int')
   ddext.input('p1_length', 'int')
   ddext.input('p2_start', 'int')
   ddext.input('p2_length', 'int')
 
 
-  ddext.returns('relation_id', 'bigint')
+  ddext.returns('relation_id', 'text')
   ddext.returns('feature', 'text')
 
 def run(words, ner_tags, lemma, relation_id, p1_start, p1_length, p2_start, p2_length):

@@ -14,4 +14,7 @@ export PYTHONPATH=$DEEPDIVE_HOME/ddlib:$PYTHONPATH
 
 cd $DEEPDIVE_HOME
 
-SBT_OPTS="-Xmx4g" sbt "run -c $APP_HOME/application.conf"
+### Run with deepdive binary:
+deepdive -c $APP_HOME/application.conf
+### Compile and run:
+# sbt "run -c $APP_HOME/application.conf"
