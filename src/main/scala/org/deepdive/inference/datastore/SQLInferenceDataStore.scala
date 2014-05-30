@@ -463,7 +463,7 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
 
         variables.zipWithIndex.foreach { case(v, pos) =>
           serializer.addEdge(rs.getLong(s"${v.relation}.id"),
-            numFactors, pos, !v.isNegated, v.predicate.getOrElse(-1))
+            numFactors, pos, !v.isNegated, v.predicate.getOrElse(1))
           numEdges += 1
         }
 
@@ -584,23 +584,24 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
         CREATE VIEW ${factorDesc.name}_query_user AS ${factorDesc.inputQuery};
         """)
 
-      // // create cardinality table for each predicate
-      // factorDesc.func.variables.zipWithIndex.foreach { case(v,idx) => {
-      //   val cardinalityTableName = s"${factorDesc.weightPrefix}_cardinality_${idx}"
-      //   v.predicate match {
-      //     case Some(s) => 
-      //       writer.println(s"""
-      //         DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
-      //         CREATE TABLE ${cardinalityTableName}(cardinality) AS VALUES (${s}) WITH DATA;
-      //         """)
-      //     case None =>
-      //       writer.println(s"""
-      //         DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
-      //         SELECT * INTO ${cardinalityTableName} FROM ${v.headRelation}_${v.field}_cardinality;
-      //         """)
-      //     }
-      //   }
-      // }
+      // create cardinality table for each predicate
+      factorDesc.func.variables.zipWithIndex.foreach { case(v,idx) => {
+        val cardinalityTableName = s"${factorDesc.weightPrefix}_cardinality_${idx}"
+        v.predicate match {
+          case Some(x) => 
+            writer.println(s"""
+              DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
+              CREATE TABLE ${cardinalityTableName}(cardinality text);
+              INSERT INTO ${cardinalityTableName} VALUES ('${"%02d".format(x)}');
+              """)
+          case None =>
+            writer.println(s"""
+              DROP TABLE IF EXISTS ${cardinalityTableName} CASCADE;
+              SELECT * INTO ${cardinalityTableName} FROM ${v.headRelation}_${v.field}_cardinality;
+              """)
+          }
+        }
+      }
 
       def generateWeightCmd(weightPrefix: String, weightVariables: Seq[String], cardinalityValues: Seq[String]) : String = 
       weightVariables.map ( v => s"""(CASE WHEN "${v}" IS NULL THEN '' ELSE "${v}"::text END)""" )
@@ -616,18 +617,19 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       }
 
       val isFixed = factorDesc.weight.isInstanceOf[KnownFactorWeight]
-      // val cardinalityValues = factorDesc.func.variables.zipWithIndex.map { case(v,idx) => 
-      //   s"""${factorDesc.weightPrefix}_cardinality_${idx}.cardinality"""
-      // }
-      // val cardinalityTables = factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
-      //   s"${factorDesc.weightPrefix}_cardinality_${idx}"
-      // }
-      val cardinalityTables = factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
-        s"${v.headRelation}_${v.field}_cardinality AS c${idx}"
-      }
       val cardinalityValues = factorDesc.func.variables.zipWithIndex.map { case(v,idx) => 
-        s"""c${idx}.cardinality"""
+        s"""_c${idx}.cardinality"""
       }
+      val cardinalityTables = factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
+        s"${factorDesc.weightPrefix}_cardinality_${idx} AS _c${idx}"
+      }
+
+      // val cardinalityTables = factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
+      //     s"${v.headRelation}_${v.field}_cardinality AS c${idx}"
+      // }
+      // val cardinalityValues = factorDesc.func.variables.zipWithIndex.map { case(v,idx) => 
+      //   s"""c${idx}.cardinality"""
+      // }
       val weightCmd = generateWeightCmd(factorDesc.weightPrefix, factorDesc.weight.variables, 
         cardinalityValues)
 
@@ -637,6 +639,10 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
         FROM ${factorDesc.name}_query_user, ${cardinalityTables.mkString(", ")}
         GROUP BY wValue, wIsFixed, wCmd;
         """)
+
+      factorDesc.func.variables.zipWithIndex.map { case(v,idx) =>
+        // writer.println(s"""DROP TABLE ${factorDesc.weightPrefix}_cardinality_${idx}""")
+      }
     }
 
     // skip learning: choose a table to copy weights from
