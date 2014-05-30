@@ -634,7 +634,9 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       writer.println(s"""
         INSERT INTO ${WeightsTable}(initial_value, is_fixed, description, count)
         SELECT ${weightValue} AS wValue, ${isFixed} AS wIsFixed, ${weightCmd} AS wCmd, COUNT(${weightValue})
-        FROM ${factorDesc.name}_query_user GROUP BY wValue, wIsFixed, wCmd;""")
+        FROM ${factorDesc.name}_query_user, ${cardinalityTables.mkString(", ")}
+        GROUP BY wValue, wIsFixed, wCmd;
+        """)
     }
 
     // skip learning: choose a table to copy weights from
